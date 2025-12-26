@@ -9,11 +9,15 @@ const App: React.FC = () => {
   const [loads] = useState<Load[]>(MANUAL_LOADS);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Filter logic (even though we only have a few hardcoded loads, search is nice)
+  // Filter logic: Case-insensitive substring match (Fuzzy search)
+  // Trimming the search term ensures "LGB " matches "LGB8"
+  const term = searchTerm.toLowerCase().trim();
+  
   const filteredLoads = loads.filter(load => 
-    load.originCity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    load.warehouseCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    load.notes?.toLowerCase().includes(searchTerm.toLowerCase())
+    load.originCity.toLowerCase().includes(term) ||
+    load.destinationState.toLowerCase().includes(term) ||
+    load.warehouseCode.toLowerCase().includes(term) ||
+    load.notes?.toLowerCase().includes(term)
   );
 
   return (
@@ -27,7 +31,7 @@ const App: React.FC = () => {
           <span className="pl-3 pr-2 text-gray-400">🔍</span>
           <input
             type="text"
-            placeholder="搜索城市、仓库代码 (如 LGB8)..."
+            placeholder="搜索城市、州名、仓库代码 (如 VA, LGB8)..."
             className="flex-1 outline-none text-sm text-gray-700 placeholder-gray-400"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -60,7 +64,7 @@ const App: React.FC = () => {
                 暂时没有符合条件的货源
               </p>
               <p className="text-gray-400 text-xs mt-1">
-                请稍后再来看看，或联系调度
+                请尝试搜索州名简写（如 TX, VA）或仓库代码
               </p>
             </div>
           )}
