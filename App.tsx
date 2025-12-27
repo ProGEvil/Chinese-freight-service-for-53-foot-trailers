@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoadCard } from './components/LoadCard';
-import { MANUAL_LOADS, TOMORROW_DATE } from './constants';
+import { MANUAL_LOADS, TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
 import { Load } from './types';
 
 const App: React.FC = () => {
   // Use state to hold loads, initialized from the manual constants file
   const [loads] = useState<Load[]>(MANUAL_LOADS);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showWeChatModal, setShowWeChatModal] = useState(false);
+  const [qrError, setQrError] = useState(false);
 
   // Filter logic: Case-insensitive substring match (Fuzzy search)
-  // Trimming the search term ensures "LGB " matches "LGB8"
   const term = searchTerm.toLowerCase().trim();
   
   const filteredLoads = loads.filter(load => 
@@ -20,8 +21,13 @@ const App: React.FC = () => {
     load.notes?.toLowerCase().includes(term)
   );
 
+  const handleOpenModal = () => {
+    setShowWeChatModal(true);
+    setQrError(false); // Reset error state when reopening to try again
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-gray-100 flex flex-col font-sans relative">
       <Navbar />
 
       <main className="flex-1 w-full max-w-3xl mx-auto p-4">
@@ -55,7 +61,11 @@ const App: React.FC = () => {
         <div className="space-y-3">
           {filteredLoads.length > 0 ? (
             filteredLoads.map((load) => (
-              <LoadCard key={load.id} load={load} />
+              <LoadCard 
+                key={load.id} 
+                load={load} 
+                onWeChatClick={handleOpenModal} 
+              />
             ))
           ) : (
             <div className="text-center py-12">
@@ -71,13 +81,64 @@ const App: React.FC = () => {
         </div>
 
         {/* Informational Footer for Suppliers */}
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center pb-8">
           <p className="text-xs text-gray-400">
             仅展示已审核的供应商货源。<br/>
             如需发布货源，请联系平台管理员。
           </p>
         </div>
       </main>
+
+      {/* WeChat QR Code Modal */}
+      {showWeChatModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+            onClick={() => setShowWeChatModal(false)}
+          ></div>
+          
+          {/* Content */}
+          <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl transform transition-all scale-100 flex flex-col items-center animate-[fadeIn_0.2s_ease-out]">
+            <button 
+              onClick={() => setShowWeChatModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+            
+            <h3 className="text-lg font-bold text-gray-800 mb-1">扫码添加微信</h3>
+            <p className="text-sm text-gray-500 mb-6">长按识别二维码或保存图片</p>
+            
+            <div className="bg-white p-2 border border-gray-100 rounded-xl shadow-inner mb-4 flex items-center justify-center min-h-[256px] min-w-[256px]">
+              {/* Image from Base64 Constant */}
+              {!qrError ? (
+                <img 
+                  src={WECHAT_QR_IMAGE} 
+                  alt="WeChat QR Code" 
+                  className="w-64 h-64 object-contain rounded-lg"
+                  onError={() => {
+                    setQrError(true);
+                  }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center w-64 h-64 bg-gray-50 rounded-lg text-gray-400 text-xs text-center">
+                  <span className="text-2xl mb-2">🖼️</span>
+                  <p>二维码加载失败</p>
+                  <p className="mt-1">请直接添加电话</p>
+                </div>
+              )}
+            </div>
+
+            <button
+               onClick={() => setShowWeChatModal(false)}
+               className="mt-2 w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

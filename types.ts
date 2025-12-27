@@ -3,6 +3,7 @@ export interface LoadStop {
   warehouseCode: string;
   loadingType: string; // e.g. '地板' | '卡板'
   appointmentTime?: string; // Optional specific time for this stop
+  address?: string; // Optional full address for navigation
 }
 
 export interface Load {
