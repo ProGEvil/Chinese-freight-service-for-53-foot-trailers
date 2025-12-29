@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoadCard } from './components/LoadCard';
-import { AdminDashboard } from './components/AdminDashboard';
+import { AdminDashboard } from './components/AdminDashBoard';
 import { MANUAL_LOADS, TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
 import { Load } from './types';
 
