@@ -11,7 +11,8 @@ const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'admin'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('admin') === 'true' ? 'admin' : 'home';
+      const isAdmin = params.get('admin') === 'true';
+      return isAdmin ? 'admin' : 'home';
     }
     return 'home';
   });
@@ -22,6 +23,14 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showWeChatModal, setShowWeChatModal] = useState(false);
   const [qrError, setQrError] = useState(false);
+
+  // --- Force URL Check on Mount (Fix for production) ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true' && view !== 'admin') {
+      setView('admin');
+    }
+  }, [view]);
 
   // --- Persistence Logic (Simulating Backend) ---
   useEffect(() => {
@@ -67,6 +76,13 @@ const App: React.FC = () => {
     const url = new URL(window.location.href);
     url.searchParams.delete('admin');
     window.history.replaceState({}, '', url);
+  };
+
+  // 备用入口：强制进入后台
+  const handleForceAdminEntry = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('admin', 'true');
+    window.location.href = url.toString();
   };
 
   // --- Filtering ---
@@ -154,10 +170,15 @@ const App: React.FC = () => {
         <div className="mt-8 text-center pb-8 space-y-2">
           <p className="text-xs text-gray-400">
             仅展示已审核的供应商货源。<br/>
-            如需发布货源，请联系平台管理员。
+            如需发布货源，请联系
+            <button 
+              onClick={handleForceAdminEntry} 
+              className="hover:text-gray-500 hover:underline transition-colors focus:outline-none"
+            >
+              平台管理员
+            </button>
+            。
           </p>
-          
-          {/* Admin button removed. Access via URL parameter ?admin=true */}
         </div>
       </main>
 
