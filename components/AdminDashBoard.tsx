@@ -1,0 +1,342 @@
+import React, { useState } from 'react';
+import { Load, LoadStop } from '../types';
+
+interface AdminDashboardProps {
+  loads: Load[];
+  onAddLoad: (load: Load) => void;
+  onDeleteLoad: (id: string) => void;
+  onExit: () => void;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ loads, onAddLoad, onDeleteLoad, onExit }) => {
+  const [password, setPassword] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Form State
+  const [originCity, setOriginCity] = useState('City of Industry, CA');
+  const [destinationState, setDestinationState] = useState('');
+  const [warehouseCodeSummary, setWarehouseCodeSummary] = useState('');
+  const [loadingType, setLoadingType] = useState('Amazon FBA');
+  const [notes, setNotes] = useState('');
+  
+  // Stops State (Default 1 stop)
+  const [stops, setStops] = useState<LoadStop[]>([
+    { stopIndex: 1, warehouseCode: '', loadingType: '地板', appointmentTime: '', address: '' }
+  ]);
+
+  const handleLogin = () => {
+    // Simple hardcoded password for demo
+    if (password === '8888') {
+      setIsAuthenticated(true);
+    } else {
+      alert('密码错误');
+    }
+  };
+
+  const handleAddStop = () => {
+    setStops([...stops, { 
+      stopIndex: stops.length + 1, 
+      warehouseCode: '', 
+      loadingType: '地板', 
+      appointmentTime: '', 
+      address: '' 
+    }]);
+  };
+
+  const handleStopChange = (index: number, field: keyof LoadStop, value: string) => {
+    const newStops = [...stops];
+    // @ts-ignore
+    newStops[index][field] = value;
+    setStops(newStops);
+  };
+
+  const handleRemoveStop = (index: number) => {
+    if (stops.length === 1) return;
+    const newStops = stops.filter((_, i) => i !== index).map((s, i) => ({ ...s, stopIndex: i + 1 }));
+    setStops(newStops);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Auto-generate summary warehouse code if empty
+    let finalWarehouseCode = warehouseCodeSummary;
+    if (!finalWarehouseCode) {
+      finalWarehouseCode = stops.map(s => s.warehouseCode).join(' + ');
+    }
+
+    const newLoad: Load = {
+      id: `load-${Date.now()}`,
+      type: loadingType as any,
+      originCity,
+      destinationState,
+      warehouseCode: finalWarehouseCode,
+      mustAppt: true,
+      stops: stops,
+      notes: notes,
+      contactName: 'Evolure 20445-Kristina',
+      contactPhone: '626-886-2025',
+      status: 'active'
+    };
+
+    onAddLoad(newLoad);
+    alert('货源发布成功！');
+    
+    // Reset critical form fields
+    setDestinationState('');
+    setWarehouseCodeSummary('');
+    setStops([{ stopIndex: 1, warehouseCode: '', loadingType: '地板', appointmentTime: '', address: '' }]);
+    setNotes('');
+  };
+
+  const handleResetData = () => {
+    if (window.confirm('⚠️ 警告：这将清除所有本地缓存的数据并恢复默认设置。\n\n确定要重置吗？')) {
+      localStorage.removeItem('evolure_loads_v1');
+      window.location.reload();
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
+        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm">
+          <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">管理员登录</h2>
+          <input
+            type="password"
+            placeholder="请输入密码 (默认: 8888)"
+            className="w-full p-3 border border-gray-300 rounded-lg mb-4 outline-none focus:border-blue-500"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            onClick={handleLogin}
+            className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors"
+          >
+            登录后台
+          </button>
+          <button
+            onClick={onExit}
+            className="w-full mt-3 text-slate-500 text-sm hover:underline"
+          >
+            返回首页
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-50 min-h-screen pb-20">
+      {/* Admin Header */}
+      <div className="bg-slate-900 text-white p-4 sticky top-0 z-40 shadow-md flex justify-between items-center">
+        <h1 className="font-bold text-lg">🔧 货源管理后台</h1>
+        <button onClick={onExit} className="text-sm bg-slate-700 px-3 py-1 rounded hover:bg-slate-600">
+          退出预览
+        </button>
+      </div>
+
+      <div className="max-w-3xl mx-auto p-4 space-y-8">
+        
+        {/* Warning Banner */}
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r shadow-sm">
+          <div className="flex">
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                <span className="font-bold">演示模式提示：</span> 
+                当前添加的数据仅保存在您的浏览器缓存中。
+                <br/>
+                如需在生产环境向所有用户发布，请联系开发人员接入真实数据库。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 1. Add New Load Form */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+            📝 发布新货源
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            
+            {/* Row 1 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">起运地 (Origin)</label>
+                <input 
+                  type="text" 
+                  value={originCity} 
+                  onChange={e => setOriginCity(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">目的地州 (Dest State)</label>
+                <input 
+                  type="text" 
+                  placeholder="例如: 德克萨斯 (Texas) TX"
+                  value={destinationState} 
+                  onChange={e => setDestinationState(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Type & Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">业务类型</label>
+                <select 
+                  value={loadingType}
+                  onChange={e => setLoadingType(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded outline-none bg-white"
+                >
+                  <option value="Amazon FBA">Amazon FBA</option>
+                  <option value="海外仓/自家仓">海外仓/自家仓</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">备注 (Ref)</label>
+                <input 
+                  type="text" 
+                  placeholder="例如: Ref: 1855..."
+                  value={notes} 
+                  onChange={e => setNotes(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Stops Section */}
+            <div className="border-t border-gray-100 pt-4 mt-2">
+              <label className="block text-sm font-bold text-slate-700 mb-3">
+                📍 卸货站点详情 (Stops)
+              </label>
+              
+              <div className="space-y-4">
+                {stops.map((stop, index) => (
+                  <div key={index} className="bg-slate-50 p-4 rounded-lg border border-slate-200 relative">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold bg-slate-200 text-slate-600 px-2 py-1 rounded">
+                        第 {index + 1} 卸
+                      </span>
+                      {stops.length > 1 && (
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveStop(index)}
+                          className="text-red-500 text-xs hover:underline"
+                        >
+                          删除此站
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block text-[10px] text-gray-400">仓库代码 (如 IAH3)</label>
+                        <input 
+                          type="text" 
+                          value={stop.warehouseCode}
+                          onChange={(e) => handleStopChange(index, 'warehouseCode', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm font-bold text-blue-600"
+                          placeholder="IAH3"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400">类型</label>
+                        <select 
+                          value={stop.loadingType}
+                          onChange={(e) => handleStopChange(index, 'loadingType', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        >
+                          <option value="地板">地板</option>
+                          <option value="卡板">卡板</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] text-gray-400">预约时间</label>
+                        <input 
+                          type="text" 
+                          value={stop.appointmentTime}
+                          onChange={(e) => handleStopChange(index, 'appointmentTime', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          placeholder="MM/DD/YYYY HH:MM CST"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400">仓库地址</label>
+                        <input 
+                          type="text" 
+                          value={stop.address}
+                          onChange={(e) => handleStopChange(index, 'address', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          placeholder="完整地址 (用于导航)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button 
+                type="button" 
+                onClick={handleAddStop}
+                className="mt-3 text-sm text-blue-600 font-medium hover:underline flex items-center gap-1"
+              >
+                + 增加卸货点 (Add Stop)
+              </button>
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-md transition-all mt-6"
+            >
+              🚀 立即发布货源
+            </button>
+          </form>
+        </section>
+
+        {/* 2. Manage Existing Loads */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-slate-800 mb-4">
+            🗑️ 管理现有货源 ({loads.length})
+          </h2>
+          <div className="space-y-3">
+            {loads.map(load => (
+              <div key={load.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
+                <div>
+                  <div className="font-bold text-slate-800">
+                    {load.warehouseCode} <span className="text-gray-400 font-normal text-xs">| {load.destinationState}</span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {load.stops.length} 卸 | {load.stops[0].appointmentTime || '无时间'}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => onDeleteLoad(load.id)}
+                  className="bg-red-50 text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-100 border border-red-100"
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+         {/* 3. Debug/Reset Section */}
+         <div className="mt-12 pt-6 border-t border-gray-200 text-center pb-8">
+            <button 
+                onClick={handleResetData}
+                className="text-gray-400 text-xs hover:text-red-500 underline transition-colors"
+            >
+                ↻ 重置所有数据 (测试专用：恢复默认列表)
+            </button>
+        </div>
+      </div>
+    </div>
+  );
+};

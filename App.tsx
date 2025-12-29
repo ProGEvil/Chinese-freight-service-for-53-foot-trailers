@@ -1,19 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoadCard } from './components/LoadCard';
+import { AdminDashboard } from './components/AdminDashboard';
 import { MANUAL_LOADS, TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
 import { Load } from './types';
 
 const App: React.FC = () => {
-  // Use state to hold loads, initialized from the manual constants file
-  const [loads] = useState<Load[]>(MANUAL_LOADS);
+  // --- State Management ---
+  // Lazy initialization: Check URL for ?admin=true parameter on startup
+  const [view, setView] = useState<'home' | 'admin'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('admin') === 'true' ? 'admin' : 'home';
+    }
+    return 'home';
+  });
+
+  const [loads, setLoads] = useState<Load[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showWeChatModal, setShowWeChatModal] = useState(false);
   const [qrError, setQrError] = useState(false);
 
-  // Filter logic: Case-insensitive substring match (Fuzzy search)
+  // --- Persistence Logic (Simulating Backend) ---
+  useEffect(() => {
+    // 1. Try to load from LocalStorage
+    const savedLoads = localStorage.getItem('evolure_loads_v1');
+    if (savedLoads) {
+      try {
+        setLoads(JSON.parse(savedLoads));
+      } catch (e) {
+        console.error("Failed to parse loads", e);
+        setLoads(MANUAL_LOADS);
+      }
+    } else {
+      // 2. If empty, seed with constants
+      setLoads(MANUAL_LOADS);
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Save to LocalStorage whenever loads change
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('evolure_loads_v1', JSON.stringify(loads));
+    }
+  }, [loads, isLoaded]);
+
+  // --- Actions ---
+  const handleAddLoad = (newLoad: Load) => {
+    // Add new load to the top
+    setLoads(prev => [newLoad, ...prev]);
+  };
+
+  const handleDeleteLoad = (id: string) => {
+    if (window.confirm('确定要删除这条货源吗？')) {
+      setLoads(prev => prev.filter(l => l.id !== id));
+    }
+  };
+
+  const handleExitAdmin = () => {
+    // 1. Switch view
+    setView('home');
+    // 2. Clean URL so refreshing doesn't force admin mode again
+    const url = new URL(window.location.href);
+    url.searchParams.delete('admin');
+    window.history.replaceState({}, '', url);
+  };
+
+  // --- Filtering ---
   const term = searchTerm.toLowerCase().trim();
-  
   const filteredLoads = loads.filter(load => 
     load.originCity.toLowerCase().includes(term) ||
     load.destinationState.toLowerCase().includes(term) ||
@@ -23,9 +80,22 @@ const App: React.FC = () => {
 
   const handleOpenModal = () => {
     setShowWeChatModal(true);
-    setQrError(false); // Reset error state when reopening to try again
+    setQrError(false);
   };
 
+  // --- Render Admin View ---
+  if (view === 'admin') {
+    return (
+      <AdminDashboard 
+        loads={loads} 
+        onAddLoad={handleAddLoad} 
+        onDeleteLoad={handleDeleteLoad}
+        onExit={handleExitAdmin} 
+      />
+    );
+  }
+
+  // --- Render Home View ---
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans relative">
       <Navbar />
@@ -81,24 +151,24 @@ const App: React.FC = () => {
         </div>
 
         {/* Informational Footer for Suppliers */}
-        <div className="mt-8 text-center pb-8">
+        <div className="mt-8 text-center pb-8 space-y-2">
           <p className="text-xs text-gray-400">
             仅展示已审核的供应商货源。<br/>
             如需发布货源，请联系平台管理员。
           </p>
+          
+          {/* Admin button removed. Access via URL parameter ?admin=true */}
         </div>
       </main>
 
       {/* WeChat QR Code Modal */}
       {showWeChatModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
             onClick={() => setShowWeChatModal(false)}
           ></div>
           
-          {/* Content */}
           <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl transform transition-all scale-100 flex flex-col items-center animate-[fadeIn_0.2s_ease-out]">
             <button 
               onClick={() => setShowWeChatModal(false)}
@@ -111,15 +181,12 @@ const App: React.FC = () => {
             <p className="text-sm text-gray-500 mb-6">长按识别二维码或保存图片</p>
             
             <div className="bg-white p-2 border border-gray-100 rounded-xl shadow-inner mb-4 flex items-center justify-center min-h-[256px] min-w-[256px]">
-              {/* Image from Base64 Constant */}
               {!qrError ? (
                 <img 
                   src={WECHAT_QR_IMAGE} 
                   alt="WeChat QR Code" 
                   className="w-64 h-64 object-contain rounded-lg"
-                  onError={() => {
-                    setQrError(true);
-                  }}
+                  onError={() => setQrError(true)}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center w-64 h-64 bg-gray-50 rounded-lg text-gray-400 text-xs text-center">
