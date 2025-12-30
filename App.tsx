@@ -1,69 +1,179 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoadCard } from './components/LoadCard';
 import { AdminDashboard } from './components/AdminDashBoard';
-import { MANUAL_LOADS, TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
+import { TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
 import { Load } from './types';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const App: React.FC = () => {
   // --- State Management ---
-  // Lazy initialization: Check URL for ?admin=true parameter on startup
   const [view, setView] = useState<'home' | 'admin'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('admin') === 'true' ? 'admin' : 'home';
+      const isAdmin = params.get('admin') === 'true';
+      return isAdmin ? 'admin' : 'home';
     }
     return 'home';
   });
 
   const [loads, setLoads] = useState<Load[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
+  const [loading, setLoading] = useState(true); // Loading state
+  
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string>('All'); // Date filter state
   const [showWeChatModal, setShowWeChatModal] = useState(false);
   const [qrError, setQrError] = useState(false);
 
-  // --- Persistence Logic (Simulating Backend) ---
+  // --- Force URL Check on Mount ---
   useEffect(() => {
-    // 1. Try to load from LocalStorage
-    const savedLoads = localStorage.getItem('evolure_loads_v1');
-    if (savedLoads) {
-      try {
-        setLoads(JSON.parse(savedLoads));
-      } catch (e) {
-        console.error("Failed to parse loads", e);
-        setLoads(MANUAL_LOADS);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true' && view !== 'admin') {
+      setView('admin');
+    }
+  }, [view]);
+
+  // --- Data Fetching ---
+  const fetchLoads = async () => {
+    setLoading(true);
+
+    if (!isSupabaseConfigured) {
+      console.log('Demo Mode: DB not configured.');
+      setLoads([]); // No fake data, just empty
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('loads')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        // Transform DB snake_case to frontend camelCase
+        const formattedLoads: Load[] = data.map((item: any) => ({
+          id: item.id,
+          created_at: item.created_at,
+          type: item.type,
+          originCity: item.origin_city,
+          destinationState: item.destination_state,
+          warehouseCode: item.warehouse_code,
+          stops: item.stops, 
+          price: item.price,
+          mustAppt: item.must_appt,
+          notes: item.notes,
+          contactPhone: item.contact_phone,
+          contactName: item.contact_name,
+          status: item.status,
+        }));
+        setLoads(formattedLoads);
+      } else {
+        setLoads([]); 
       }
-    } else {
-      // 2. If empty, seed with constants
-      setLoads(MANUAL_LOADS);
+    } catch (error) {
+      console.warn('Error fetching loads:', error);
+      setLoads([]);
+    } finally {
+      setLoading(false);
     }
-    setIsLoaded(true);
-  }, []);
-
-  // Save to LocalStorage whenever loads change
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('evolure_loads_v1', JSON.stringify(loads));
-    }
-  }, [loads, isLoaded]);
-
-  // --- Actions ---
-  const handleAddLoad = (newLoad: Load) => {
-    // Add new load to the top
-    setLoads(prev => [newLoad, ...prev]);
   };
 
-  const handleDeleteLoad = (id: string) => {
-    if (window.confirm('确定要删除这条货源吗？')) {
+  useEffect(() => {
+    fetchLoads();
+  }, []);
+
+  // --- Date Helper ---
+  // Extract MM/DD from "MM/DD/YYYY HH:MM CST"
+  const extractDate = (timeStr?: string) => {
+    if (!timeStr) return '';
+    const parts = timeStr.split(' '); // ["01/02/2026", "22:00", "CST"]
+    if (parts.length > 0) {
+      // Get first part "01/02/2026", take first 5 chars "01/02"
+      return parts[0].substring(0, 5);
+    }
+    return '';
+  };
+
+  // --- Derived State: Available Dates ---
+  const availableDates = useMemo(() => {
+    const dates = new Set<string>();
+    loads.forEach(load => {
+      load.stops.forEach(stop => {
+        const d = extractDate(stop.appointmentTime);
+        if (d) dates.add(d);
+      });
+    });
+    return Array.from(dates).sort();
+  }, [loads]);
+
+  // --- Actions ---
+  const handleAddLoad = async (newLoad: Load) => {
+    if (!isSupabaseConfigured) {
+      alert('演示模式：数据库未连接，仅本地临时添加。\n(请在 .env 配置 Supabase 密钥)');
+      setLoads([newLoad, ...loads]);
+      return;
+    }
+
+    try {
+      const dbPayload = {
+        type: newLoad.type,
+        origin_city: newLoad.originCity,
+        destination_state: newLoad.destinationState,
+        warehouse_code: newLoad.warehouseCode,
+        stops: newLoad.stops,
+        must_appt: newLoad.mustAppt,
+        notes: newLoad.notes,
+        contact_phone: newLoad.contactPhone,
+        contact_name: newLoad.contactName,
+        status: newLoad.status,
+      };
+
+      const { data, error } = await supabase
+        .from('loads')
+        .insert([dbPayload])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        fetchLoads();
+        alert('货源发布成功！');
+      }
+    } catch (error) {
+      console.error('Error adding load:', error);
+      alert('发布失败: ' + (error as any).message || JSON.stringify(error));
+    }
+  };
+
+  const handleDeleteLoad = async (id: string) => {
+    if (!window.confirm('确定要删除这条货源吗？')) return;
+
+    if (!isSupabaseConfigured) {
+      alert('演示模式：本地临时删除。');
       setLoads(prev => prev.filter(l => l.id !== id));
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('loads')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setLoads(prev => prev.filter(l => l.id !== id));
+    } catch (error) {
+      console.error('Error deleting load:', error);
+      alert('删除失败');
     }
   };
 
   const handleExitAdmin = () => {
-    // 1. Switch view
     setView('home');
-    // 2. Clean URL so refreshing doesn't force admin mode again
     const url = new URL(window.location.href);
     url.searchParams.delete('admin');
     window.history.replaceState({}, '', url);
@@ -71,12 +181,24 @@ const App: React.FC = () => {
 
   // --- Filtering ---
   const term = searchTerm.toLowerCase().trim();
-  const filteredLoads = loads.filter(load => 
-    load.originCity.toLowerCase().includes(term) ||
-    load.destinationState.toLowerCase().includes(term) ||
-    load.warehouseCode.toLowerCase().includes(term) ||
-    load.notes?.toLowerCase().includes(term)
-  );
+  
+  const filteredLoads = loads.filter(load => {
+    // 1. Search Filter
+    const matchesSearch = 
+      load.originCity.toLowerCase().includes(term) ||
+      load.destinationState.toLowerCase().includes(term) ||
+      load.warehouseCode.toLowerCase().includes(term) ||
+      (load.notes && load.notes.toLowerCase().includes(term));
+
+    // 2. Date Filter
+    let matchesDate = true;
+    if (selectedDate !== 'All') {
+      // Check if any stop in this load matches the selected date
+      matchesDate = load.stops.some(stop => extractDate(stop.appointmentTime) === selectedDate);
+    }
+
+    return matchesSearch && matchesDate;
+  });
 
   const handleOpenModal = () => {
     setShowWeChatModal(true);
@@ -103,7 +225,7 @@ const App: React.FC = () => {
       <main className="flex-1 w-full max-w-3xl mx-auto p-4">
         
         {/* Search Bar */}
-        <div className="bg-white rounded-full shadow-sm p-2 mb-6 flex items-center border border-gray-200">
+        <div className="bg-white rounded-full shadow-sm p-2 mb-4 flex items-center border border-gray-200">
           <span className="pl-3 pr-2 text-gray-400">🔍</span>
           <input
             type="text"
@@ -114,7 +236,36 @@ const App: React.FC = () => {
           />
         </div>
 
-        {/* Date Header */}
+        {/* Date Filter Bar */}
+        {availableDates.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-4 pt-1 px-1 no-scrollbar items-center">
+            <button
+              onClick={() => setSelectedDate('All')}
+              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition-colors shadow-sm ${
+                selectedDate === 'All'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              全部日期
+            </button>
+            {availableDates.map(date => (
+              <button
+                key={date}
+                onClick={() => setSelectedDate(date)}
+                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition-colors shadow-sm ${
+                  selectedDate === date
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {date}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Header Summary */}
         <div className="flex items-center justify-between mb-4 px-1">
           <h2 className="text-slate-800 font-bold text-lg flex items-center gap-2">
             最新货源 
@@ -129,7 +280,11 @@ const App: React.FC = () => {
 
         {/* Load List */}
         <div className="space-y-3">
-          {filteredLoads.length > 0 ? (
+          {loading ? (
+            <div className="text-center py-12 text-gray-400">
+              加载中...
+            </div>
+          ) : filteredLoads.length > 0 ? (
             filteredLoads.map((load) => (
               <LoadCard 
                 key={load.id} 
@@ -143,9 +298,11 @@ const App: React.FC = () => {
               <p className="text-gray-500 text-sm">
                 暂时没有符合条件的货源
               </p>
-              <p className="text-gray-400 text-xs mt-1">
-                请尝试搜索州名简写（如 TX, VA）或仓库代码
-              </p>
+              {!isSupabaseConfigured && (
+                 <p className="text-red-400 text-xs mt-2">
+                   提示: 数据库未连接，请检查配置。
+                 </p>
+              )}
             </div>
           )}
         </div>
@@ -156,8 +313,6 @@ const App: React.FC = () => {
             仅展示已审核的供应商货源。<br/>
             如需发布货源，请联系平台管理员。
           </p>
-          
-          {/* Admin button removed. Access via URL parameter ?admin=true */}
         </div>
       </main>
 
