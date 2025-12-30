@@ -9,13 +9,18 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const App: React.FC = () => {
   // --- State Management ---
+  
+  // Helper to check for admin parameter (supports 'true', 'ture' typo, '1', etc.)
+  const checkAdminParam = () => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    const val = params.get('admin');
+    // Accept explicit 'true', the typo 'ture', '1', 'yes', or empty string (just ?admin)
+    return val === 'true' || val === 'ture' || val === '1' || val === 'yes' || val === '';
+  };
+
   const [view, setView] = useState<'home' | 'admin'>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const isAdmin = params.get('admin') === 'true';
-      return isAdmin ? 'admin' : 'home';
-    }
-    return 'home';
+    return checkAdminParam() ? 'admin' : 'home';
   });
 
   const [loads, setLoads] = useState<Load[]>([]);
@@ -28,8 +33,7 @@ const App: React.FC = () => {
 
   // --- Force URL Check on Mount ---
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true' && view !== 'admin') {
+    if (checkAdminParam() && view !== 'admin') {
       setView('admin');
     }
   }, [view]);
