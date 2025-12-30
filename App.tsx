@@ -1,13 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoadCard } from './components/LoadCard';
 import { AdminDashboard } from './components/AdminDashBoard';
-import { MANUAL_LOADS, TOMORROW_DATE, WECHAT_QR_IMAGE } from './constants';
+import { TOMORROW_DATE, WECHAT_QR_IMAGE, MANUAL_LOADS } from './constants';
 import { Load } from './types';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const App: React.FC = () => {
   // --- State Management ---
-  // Lazy initialization: Check URL for ?admin=true parameter on startup
   const [view, setView] = useState<'home' | 'admin'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -18,13 +19,13 @@ const App: React.FC = () => {
   });
 
   const [loads, setLoads] = useState<Load[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
+  const [loading, setLoading] = useState(true); // Loading state
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [showWeChatModal, setShowWeChatModal] = useState(false);
   const [qrError, setQrError] = useState(false);
 
-  // --- Force URL Check on Mount (Fix for production) ---
+  // --- Force URL Check on Mount ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true' && view !== 'admin') {
@@ -32,53 +33,136 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // --- Persistence Logic (Simulating Backend) ---
-  useEffect(() => {
-    // 1. Try to load from LocalStorage
-    const savedLoads = localStorage.getItem('evolure_loads_v1');
-    if (savedLoads) {
-      try {
-        setLoads(JSON.parse(savedLoads));
-      } catch (e) {
-        console.error("Failed to parse loads", e);
-        setLoads(MANUAL_LOADS);
-      }
-    } else {
-      // 2. If empty, seed with constants
+  // --- Data Fetching (Supabase + Fallback) ---
+  const fetchLoads = async () => {
+    setLoading(true);
+
+    // 1. If keys are missing, immediately fallback to demo data
+    if (!isSupabaseConfigured) {
+      console.log('Demo Mode: Using local manual loads.');
       setLoads(MANUAL_LOADS);
+      setLoading(false);
+      return;
     }
-    setIsLoaded(true);
-  }, []);
 
-  // Save to LocalStorage whenever loads change
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('evolure_loads_v1', JSON.stringify(loads));
+    // 2. Try fetching from Supabase
+    try {
+      const { data, error } = await supabase
+        .from('loads')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        // Transform DB snake_case to frontend camelCase
+        const formattedLoads: Load[] = data.map((item: any) => ({
+          id: item.id,
+          created_at: item.created_at,
+          type: item.type,
+          originCity: item.origin_city,
+          destinationState: item.destination_state,
+          warehouseCode: item.warehouse_code,
+          stops: item.stops, // JSONB comes back as object/array automatically
+          price: item.price,
+          mustAppt: item.must_appt,
+          notes: item.notes,
+          contactPhone: item.contact_phone,
+          contactName: item.contact_name,
+          status: item.status,
+        }));
+        setLoads(formattedLoads);
+      } else {
+        // If DB is empty, maybe fallback or just show empty
+        // Let's fallback to manual loads if DB is empty for demo feeling, 
+        // OR just show empty. Let's show empty if DB worked but had no data.
+        setLoads([]); 
+      }
+    } catch (error) {
+      console.warn('Error fetching loads from Supabase, falling back to Demo Data:', error);
+      // Fallback to manual loads if network/DB error
+      setLoads(MANUAL_LOADS);
+    } finally {
+      setLoading(false);
     }
-  }, [loads, isLoaded]);
-
-  // --- Actions ---
-  const handleAddLoad = (newLoad: Load) => {
-    // Add new load to the top
-    setLoads(prev => [newLoad, ...prev]);
   };
 
-  const handleDeleteLoad = (id: string) => {
-    if (window.confirm('确定要删除这条货源吗？')) {
+  useEffect(() => {
+    fetchLoads();
+  }, []);
+
+  // --- Actions ---
+  const handleAddLoad = async (newLoad: Load) => {
+    if (!isSupabaseConfigured) {
+      alert('演示模式：数据库未连接，仅本地临时添加。\n(请在 .env 配置 Supabase 密钥)');
+      setLoads([newLoad, ...loads]);
+      return;
+    }
+
+    try {
+      // Map frontend camelCase to DB snake_case
+      const dbPayload = {
+        type: newLoad.type,
+        origin_city: newLoad.originCity,
+        destination_state: newLoad.destinationState,
+        warehouse_code: newLoad.warehouseCode,
+        stops: newLoad.stops,
+        must_appt: newLoad.mustAppt,
+        notes: newLoad.notes,
+        contact_phone: newLoad.contactPhone,
+        contact_name: newLoad.contactName,
+        status: newLoad.status,
+      };
+
+      const { data, error } = await supabase
+        .from('loads')
+        .insert([dbPayload])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        fetchLoads();
+        alert('货源发布成功！');
+      }
+    } catch (error) {
+      console.error('Error adding load:', error);
+      alert('发布失败: ' + (error as any).message || JSON.stringify(error));
+    }
+  };
+
+  const handleDeleteLoad = async (id: string) => {
+    if (!window.confirm('确定要删除这条货源吗？')) return;
+
+    if (!isSupabaseConfigured) {
+      alert('演示模式：本地临时删除。');
       setLoads(prev => prev.filter(l => l.id !== id));
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('loads')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Update UI locally
+      setLoads(prev => prev.filter(l => l.id !== id));
+    } catch (error) {
+      console.error('Error deleting load:', error);
+      alert('删除失败');
     }
   };
 
   const handleExitAdmin = () => {
-    // 1. Switch view
     setView('home');
-    // 2. Clean URL so refreshing doesn't force admin mode again
     const url = new URL(window.location.href);
     url.searchParams.delete('admin');
     window.history.replaceState({}, '', url);
   };
 
-  // 备用入口：强制进入后台
   const handleForceAdminEntry = () => {
     const url = new URL(window.location.href);
     url.searchParams.set('admin', 'true');
@@ -91,7 +175,7 @@ const App: React.FC = () => {
     load.originCity.toLowerCase().includes(term) ||
     load.destinationState.toLowerCase().includes(term) ||
     load.warehouseCode.toLowerCase().includes(term) ||
-    load.notes?.toLowerCase().includes(term)
+    (load.notes && load.notes.toLowerCase().includes(term))
   );
 
   const handleOpenModal = () => {
@@ -145,7 +229,11 @@ const App: React.FC = () => {
 
         {/* Load List */}
         <div className="space-y-3">
-          {filteredLoads.length > 0 ? (
+          {loading ? (
+            <div className="text-center py-12 text-gray-400">
+              加载中...
+            </div>
+          ) : filteredLoads.length > 0 ? (
             filteredLoads.map((load) => (
               <LoadCard 
                 key={load.id} 
